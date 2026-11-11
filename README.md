@@ -25,7 +25,7 @@ Opções (Configurações > Apps > Pulso): a partir de quantos % de CPU vale com
 Pela loja do MiniUtils (Configurações > Loja de plugins) ou:
 
 ```sh
-miniutils --instalar io.github.exemplo.pulso
+miniutils --instalar io.github.pedroluizmossi.pulso
 ```
 
 Precisa de um MiniUtils com os recursos avançados de plugin (`uses`, `net`, `run_async`,
