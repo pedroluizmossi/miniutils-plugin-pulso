@@ -1,0 +1,107 @@
+// Tela do plugin "Pulso". O host preenche theme, mascot e mood; o script (main.rhai)
+// preenche o resto com ui("propriedade", valor).
+import { Theme } from "miniutils.slint";
+import { Grafico } from "ui/grafico.slint";
+
+component Linha inherits HorizontalLayout {
+    in property <Theme> theme;
+    in property <string> rotulo;
+    in property <string> valor;
+    in property <bool> destaque;
+    spacing: 8px;
+    Text { text: rotulo; color: theme.sub; font-size: 12px; width: 72px; }
+    Text {
+        text: valor;
+        color: destaque ? theme.warn : theme.text;
+        font-family: theme.font-mono;
+        font-size: 12px;
+        horizontal-stretch: 1;
+        overflow: elide;
+    }
+}
+
+export component Main inherits Rectangle {
+    in property <Theme> theme;
+    in property <image> mascot;
+    in property <string> mood;
+    in property <string> cpu: "…";
+    in property <string> detalhe: "esperando a primeira leitura";
+    in property <[float]> historico;
+    in property <float> limite: 85;
+    in property <bool> batida;
+    in property <string> recorde: "—";
+    in property <string> culpado;
+    in property <bool> mostra-ip: true;
+    in property <string> ip: "…";
+    callback action(string, string);
+
+    property <bool> agitado: mood == "busy" || mood == "alarm";
+
+    VerticalLayout {
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 12px;
+            Image {
+                source: mascot;
+                width: 56px;
+                height: 49px;
+                image-rendering: pixelated;
+                image-fit: contain;
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    Text { text: "Pulso"; color: theme.text; font-family: theme.font-title; font-size: 17px; font-weight: 700; }
+                    // o coração (assets/coracao.png, branco) pinta na cor do tema e bate a cada leitura
+                    Rectangle {
+                        width: 18px;
+                        height: 18px;
+                        Image {
+                            source: @image-url("assets/coracao.png");
+                            colorize: agitado ? theme.alarm : theme.fur;
+                            image-rendering: pixelated;
+                            image-fit: contain;
+                            width: batida ? 18px : 14px;
+                            height: self.width;
+                            animate width { duration: 120ms; easing: ease-out; }
+                        }
+                    }
+                }
+                Text { text: detalhe; color: theme.sub; font-size: 12px; overflow: elide; }
+            }
+            Text {
+                text: cpu;
+                color: agitado ? theme.warn : theme.text;
+                font-family: theme.font-mono;
+                font-size: 26px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+        }
+        Grafico {
+            height: 44px;
+            valores: historico;
+            limite: limite;
+            cor: theme.fur;
+            alerta: theme.warn;
+            trilho: theme.fur.with-alpha(0.08);
+        }
+        Linha { theme: theme; rotulo: "recorde"; valor: recorde; }
+        if culpado != "": Linha { theme: theme; rotulo: "culpado"; valor: culpado; destaque: true; }
+        if mostra-ip: HorizontalLayout {
+            spacing: 8px;
+            Linha { theme: theme; rotulo: "IP público"; valor: ip; }
+            Rectangle {
+                width: 22px;
+                height: 18px;
+                background: touch.has-hover ? theme.fur.with-alpha(0.15) : transparent;
+                Text { text: "↻"; color: theme.sub; font-size: 13px; }
+                touch := TouchArea { clicked => { root.action("ip", ""); } }
+            }
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}

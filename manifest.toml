@@ -1,0 +1,38 @@
+# Plugin de exemplo com os recursos avançados: provedor do hub (uses), dados guardados,
+# rede com lista de domínios, run_async, tela em vários arquivos com imagem própria e
+# fatos para a conversa entre mascotes.
+# Formato: topo de src/core/plugins.rs e src/apps/plugin.rs no repositório do MiniUtils.
+id = "io.github.exemplo.pulso"
+name = "Pulso"
+description = "CPU ao vivo com gráfico, recorde guardado, o processo culpado nos picos e o IP público. Plugin de exemplo dos recursos avançados."
+icon = "coelho"
+api = 1
+# as leituras de CPU, temperatura e memória chegam em fn on_event("sys", dados)
+uses = ["sys"]
+
+[permissions]
+# o culpado de um pico de CPU (por run_async, sem travar o script)
+exec = ["ps"]
+# o IP público (http_get_async)
+net = ["api.ipify.org"]
+
+[ui]
+view = "view.slint"
+script = "main.rhai"
+# o tick só reconsulta o IP público
+every = 600
+
+[[settings]]
+key = "limite"
+label = "Pico de CPU a partir de (%)"
+type = "int"
+default = 85
+min = 50
+max = 100
+step = 5
+
+[[settings]]
+key = "ip"
+label = "Mostrar o IP público (consulta api.ipify.org)"
+type = "bool"
+default = true

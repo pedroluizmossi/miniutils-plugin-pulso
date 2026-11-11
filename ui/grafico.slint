@@ -1,0 +1,29 @@
+// Gráfico de barras da CPU (0 a 100), da leitura mais antiga à mais nova. Importado pelo
+// view.slint: a tela de um plugin pode se dividir em arquivos de ui/.
+export component Grafico inherits Rectangle {
+    // leituras em %, até `janela` delas
+    in property <[float]> valores;
+    in property <int> janela: 30;
+    // a partir de quanto a barra fica na cor de alerta
+    in property <float> limite: 85;
+    in property <color> cor;
+    in property <color> alerta;
+    in property <color> trilho;
+    property <length> passo: self.width / max(1, janela);
+
+    background: trilho;
+    // a linha do limite
+    Rectangle {
+        y: parent.height * (1 - limite / 100);
+        height: 1px;
+        background: alerta.with-alpha(0.5);
+    }
+    for v[i] in valores: Rectangle {
+        // encostado à direita: a leitura mais nova fica na ponta
+        x: parent.width - (valores.length - i) * passo;
+        width: max(1px, passo - 1px);
+        height: max(1px, parent.height * clamp(v, 0, 100) / 100);
+        y: parent.height - self.height;
+        background: v >= limite ? alerta : cor;
+    }
+}
