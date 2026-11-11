@@ -1,18 +1,17 @@
-# Plugin de exemplo com os recursos avançados: provedor do hub (uses), dados guardados,
-# rede com lista de domínios, run_async, tela em vários arquivos com imagem própria e
-# fatos para a conversa entre mascotes.
+# Plugin de exemplo com os recursos avançados: provedores do hub (uses), dados guardados,
+# rede com lista de domínios, tela em vários arquivos com imagem própria e fatos para a
+# conversa entre mascotes. Funciona no Linux e no Windows.
 # Formato: https://github.com/pedroluizmossi/hub-app-rust (src/core/plugins.rs e src/apps/plugin.rs).
 id = "io.github.pedroluizmossi.pulso"
 name = "Pulso"
-description = "CPU ao vivo com gráfico, recorde guardado, o processo culpado nos picos e o IP público. Plugin de exemplo dos recursos avançados."
+description = "CPU ao vivo com gráfico, recorde guardado, o processo culpado nos picos e o IP público. Linux e Windows. Plugin de exemplo dos recursos avançados."
 icon = "coelho"
 api = 1
-# as leituras de CPU, temperatura e memória chegam em fn on_event("sys", dados)
-uses = ["sys"]
+# as leituras de CPU, temperatura e memória chegam em fn on_event("sys", dados); os
+# processos mais pesados (o culpado de um pico), em fn on_event("procs", dados)
+uses = ["sys", "procs"]
 
 [permissions]
-# o culpado de um pico de CPU (por run_async, sem travar o script)
-exec = ["ps"]
 # o IP público (http_get_async)
 net = ["api.ipify.org"]
 

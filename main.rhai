@@ -1,7 +1,7 @@
 // Lógica do plugin "Pulso". Roda isolado, só com a API do MiniUtils:
-// - on_event: as leituras do provedor "sys" (uses no manifesto);
+// - on_event: as leituras dos provedores "sys" e "procs" (uses no manifesto);
 // - store_get/store_set: o recorde, guardado entre execuções;
-// - run_async: o processo culpado num pico, sem travar o script;
+// - procs: o processo culpado num pico (igual no Linux e no Windows, sem rodar programa);
 // - http_get_async + parse_json: o IP público (só api.ipify.org, de [permissions] net);
 // - fact: conta à conversa entre mascotes quem causou o pico.
 
@@ -9,7 +9,7 @@ fn start() {
     this.cpu = [];
     this.alto = false;
     this.culpado = "";
-    this.ultimo_ps = 0;
+    this.ultimo_culpado = 0;
     this.batida = false;
     this.temp_aviso = false;
     // altura do quadro do monitor para a largura 1000 (a tela avisa a dela)
@@ -49,6 +49,10 @@ fn aplica_opcoes() {
 }
 
 fn on_event(topic, data) {
+    if topic == "procs" {
+        this.acha_culpado(data);
+        return;
+    }
     if topic != "sys" {
         return;
     }
@@ -85,13 +89,9 @@ fn on_event(topic, data) {
 
     this.guarda_recorde(cpu, temp);
 
-    // pico: acha o culpado (no máximo a cada 30 s) e sai do pico só 10 pontos abaixo
+    // pico (o culpado vem na próxima leitura de "procs"); sai do pico só 10 pontos abaixo
     if cpu >= this.limite {
         this.alto = true;
-        if now() - this.ultimo_ps >= 30 {
-            this.ultimo_ps = now();
-            run_async(["ps", "-eo", "comm,pcpu", "--sort=-pcpu", "--no-headers"], "achou_culpado");
-        }
     } else if this.alto && cpu < this.limite - 10.0 {
         this.alto = false;
         this.culpado = "";
@@ -169,23 +169,22 @@ fn taxa(b) {
     }
 }
 
-fn achou_culpado(r) {
-    if !r.ok {
+// num pico, o processo que mais usa CPU (no máximo a cada 30 s). `cpu` é em % da
+// máquina toda, como a leitura de "sys".
+fn acha_culpado(data) {
+    if !this.alto || data.by_cpu.len() == 0 || now() - this.ultimo_culpado < 30 {
         return;
     }
-    let partes = r.out.split("\n")[0].split();
-    if partes.len() < 2 {
+    let p = data.by_cpu[0];
+    // primeira leitura do provedor: tudo em 0
+    if p.cpu < 1.0 {
         return;
     }
-    let nome = partes[0];
-    let pct = parse_float(partes[partes.len() - 1]);
-    if !this.alto {
-        return;
-    }
-    this.culpado = `${nome} (${pct.round().to_int()}%)`;
+    this.ultimo_culpado = now();
+    this.culpado = `${p.name} (${p.cpu.round().to_int()}%)`;
     ui("estado", "pico: " + this.culpado);
     // a mascote conta à conversa quem foi (o host já conta a mudança de humor)
-    fact("strain", nome, pct);
+    fact("strain", p.name, p.cpu);
 }
 
 fn guarda_recorde(cpu, temp) {
