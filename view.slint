@@ -1,107 +1,222 @@
-// Tela do plugin "Pulso". O host preenche theme, mascot e mood; o script (main.rhai)
-// preenche o resto com ui("propriedade", valor).
+// Tela do plugin "Pulso", no estilo dos Sinais vitais do MiniUtils. O host preenche
+// theme, mascot e mood; o script (main.rhai) preenche o resto com ui("propriedade", valor).
+// Responsiva: baixa, some a fileira de quadros; mais baixa ainda, o rodapé.
 import { Theme } from "miniutils.slint";
-import { Grafico } from "ui/grafico.slint";
-
-component Linha inherits HorizontalLayout {
-    in property <Theme> theme;
-    in property <string> rotulo;
-    in property <string> valor;
-    in property <bool> destaque;
-    spacing: 8px;
-    Text { text: rotulo; color: theme.sub; font-size: 12px; width: 72px; }
-    Text {
-        text: valor;
-        color: destaque ? theme.warn : theme.text;
-        font-family: theme.font-mono;
-        font-size: 12px;
-        horizontal-stretch: 1;
-        overflow: elide;
-    }
-}
+import { Humor, Segmentos, Monitor, Quadro } from "ui/grafico.slint";
 
 export component Main inherits Rectangle {
     in property <Theme> theme;
     in property <image> mascot;
-    in property <string> mood;
-    in property <string> cpu: "…";
-    in property <string> detalhe: "esperando a primeira leitura";
-    in property <[float]> historico;
+    in property <string> mood: "sleep";
+    // CPU
+    in property <float> cpu;
+    in property <string> cpu-texto: "—";
     in property <float> limite: 85;
+    in property <string> estado: "esperando a primeira leitura";
+    in property <bool> pico;
+    // monitor: caminhos SVG (1000×100) e a última leitura
+    in property <string> linha;
+    in property <string> area;
+    in property <float> altura: 100;
     in property <bool> batida;
+    // quadros
+    in property <float> ram;
+    in property <string> ram-texto: "—";
+    in property <string> ram-nota;
+    in property <float> temp;
+    in property <string> temp-texto: "—";
+    in property <string> temp-nota;
+    in property <string> rede-baixa: "—";
+    in property <string> rede-sobe;
+    // rodapé
     in property <string> recorde: "—";
-    in property <string> culpado;
     in property <bool> mostra-ip: true;
     in property <string> ip: "…";
     callback action(string, string);
 
-    property <bool> agitado: mood == "busy" || mood == "alarm";
+    property <Theme> t: theme;
+    property <color> tinta: Humor.cor(t, mood == "sleep" ? "idle" : mood);
+    property <color> tinta-temp: temp >= 85 ? t.alarm : temp >= 70 ? t.warn : t.visor;
+    property <bool> baixo: self.height < 250px;
+    property <bool> mini: self.height < 170px;
+    property <bool> estreito: self.width < 300px;
 
-    VerticalLayout {
-        spacing: 8px;
-        HorizontalLayout {
-            spacing: 12px;
-            Image {
-                source: mascot;
-                width: 56px;
-                height: 49px;
-                image-rendering: pixelated;
-                image-fit: contain;
-            }
-            VerticalLayout {
-                alignment: center;
-                horizontal-stretch: 1;
-                HorizontalLayout {
-                    spacing: 6px;
-                    alignment: start;
-                    Text { text: "Pulso"; color: theme.text; font-family: theme.font-title; font-size: 17px; font-weight: 700; }
-                    // o coração (assets/coracao.png, branco) pinta na cor do tema e bate a cada leitura
-                    Rectangle {
-                        width: 18px;
-                        height: 18px;
-                        Image {
-                            source: @image-url("assets/coracao.png");
-                            colorize: agitado ? theme.alarm : theme.fur;
-                            image-rendering: pixelated;
-                            image-fit: contain;
-                            width: batida ? 18px : 14px;
-                            height: self.width;
-                            animate width { duration: 120ms; easing: ease-out; }
+    Rectangle {
+        background: t.bg0.mix(t.bg1, 0.6);
+        border-width: 1px;
+        border-color: mood == "alarm" ? t.alarm : pico ? t.warn.with-alpha(0.6) : tinta.with-alpha(0.3);
+        animate border-color { duration: 300ms; }
+
+        VerticalLayout {
+            padding: mini ? 10px : 14px;
+            spacing: mini ? 6px : 10px;
+
+            // cabeçalho: mascote com aura, nome, estado e o número grande
+            HorizontalLayout {
+                spacing: 14px;
+                Rectangle {
+                    width: mini ? 42px : 60px;
+                    height: self.width * 14 / 16;
+                    // aura em anéis (o renderizador por software não tem blur)
+                    if mood != "sleep": Rectangle {
+                        for k in 3: Rectangle {
+                            property <float> s: 1.15 - k * 0.22;
+                            width: parent.width * s;
+                            height: parent.height * s;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: min(self.width, self.height) / 2;
+                            background: tinta.with-alpha(pico ? 0.12 : 0.07);
                         }
                     }
+                    Image {
+                        source: mascot;
+                        width: parent.width;
+                        height: parent.height;
+                        image-rendering: pixelated;
+                        image-fit: contain;
+                        // pula no ritmo das leituras quando está agitada ou contente
+                        y: batida && (mood == "busy" || mood == "happy") ? -parent.height * 0.08 : 0;
+                        animate y { duration: 110ms; easing: ease-out; }
+                    }
                 }
-                Text { text: detalhe; color: theme.sub; font-size: 12px; overflow: elide; }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
+                    horizontal-stretch: 1;
+                    HorizontalLayout {
+                        spacing: 7px;
+                        alignment: start;
+                        Text {
+                            text: "PULSO";
+                            color: t.sub;
+                            font-family: t.font-mono;
+                            font-size: 11px;
+                            letter-spacing: 1.5px;
+                            vertical-alignment: center;
+                        }
+                        // o coração (assets/coracao.png, branco) pinta na cor do humor e bate a cada leitura
+                        Rectangle {
+                            width: 14px;
+                            height: 14px;
+                            Image {
+                                source: @image-url("assets/coracao.png");
+                                colorize: mood == "sleep" ? t.muted : tinta;
+                                image-rendering: pixelated;
+                                image-fit: contain;
+                                width: batida ? 14px : 10px;
+                                height: self.width;
+                                animate width { duration: 120ms; easing: ease-out; }
+                            }
+                        }
+                    }
+                    Text {
+                        text: estado;
+                        color: pico ? t.warn : t.text;
+                        font-size: mini ? 12px : 13px;
+                        font-weight: pico ? 700 : 400;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: cpu-texto;
+                        color: tinta;
+                        font-family: t.font-mono;
+                        font-size: mini ? 22px : 30px;
+                        font-weight: 700;
+                        horizontal-alignment: right;
+                    }
+                    if !mini: Text {
+                        text: "CPU";
+                        color: t.sub;
+                        font-family: t.font-mono;
+                        font-size: 10px;
+                        letter-spacing: 1.5px;
+                        horizontal-alignment: right;
+                    }
+                }
             }
-            Text {
-                text: cpu;
-                color: agitado ? theme.warn : theme.text;
-                font-family: theme.font-mono;
-                font-size: 26px;
-                font-weight: 700;
-                vertical-alignment: center;
+
+            Segmentos {
+                valor: cpu;
+                limite: limite;
+                cor: tinta;
+                alerta: t.warn;
+                apagado: t.muted.with-alpha(0.3);
+                segmentos: estreito ? 12 : 24;
+            }
+
+            Monitor {
+                min-height: 36px;
+                vertical-stretch: 1;
+                linha: linha;
+                area: area;
+                altura: altura;
+                medida(h) => { root.action("monitor", round(h)); }
+                ultimo: cpu;
+                limite: limite;
+                batida: batida;
+                cor: tinta;
+                alerta: t.warn;
+                grade: t.muted.with-alpha(0.18);
+            }
+
+            if !baixo: HorizontalLayout {
+                spacing: 8px;
+                Quadro {
+                    theme: t;
+                    rotulo: "RAM";
+                    valor: ram-texto;
+                    nota: ram-nota;
+                    barra: ram;
+                    cor: ram >= 90 ? t.alarm : ram >= 75 ? t.warn : t.visor;
+                }
+                Quadro {
+                    theme: t;
+                    rotulo: "TEMP";
+                    valor: temp-texto;
+                    nota: temp-nota;
+                    barra: temp > 0 ? temp : -1;
+                    cor: tinta-temp;
+                }
+                if !estreito: Quadro {
+                    theme: t;
+                    rotulo: "REDE";
+                    valor: rede-baixa;
+                    nota: rede-sobe;
+                    cor: t.visor;
+                }
+            }
+
+            if !mini: HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    text: "RECORDE " + recorde;
+                    color: t.sub;
+                    font-family: t.font-mono;
+                    font-size: 11px;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+                if mostra-ip: Rectangle {
+                    background: ip-toque.has-hover ? t.fur.with-alpha(0.12) : transparent;
+                    border-width: 1px;
+                    border-color: t.muted.with-alpha(0.5);
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        padding-top: 2px;
+                        padding-bottom: 2px;
+                        spacing: 6px;
+                        Text { text: "IP " + ip; color: t.sub; font-family: t.font-mono; font-size: 11px; vertical-alignment: center; }
+                        Text { text: "↻"; color: t.sub; font-size: 12px; vertical-alignment: center; }
+                    }
+                    ip-toque := TouchArea { clicked => { root.action("ip", ""); } }
+                }
             }
         }
-        Grafico {
-            height: 44px;
-            valores: historico;
-            limite: limite;
-            cor: theme.fur;
-            alerta: theme.warn;
-            trilho: theme.fur.with-alpha(0.08);
-        }
-        Linha { theme: theme; rotulo: "recorde"; valor: recorde; }
-        if culpado != "": Linha { theme: theme; rotulo: "culpado"; valor: culpado; destaque: true; }
-        if mostra-ip: HorizontalLayout {
-            spacing: 8px;
-            Linha { theme: theme; rotulo: "IP público"; valor: ip; }
-            Rectangle {
-                width: 22px;
-                height: 18px;
-                background: touch.has-hover ? theme.fur.with-alpha(0.15) : transparent;
-                Text { text: "↻"; color: theme.sub; font-size: 13px; }
-                touch := TouchArea { clicked => { root.action("ip", ""); } }
-            }
-        }
-        Rectangle { vertical-stretch: 1; }
     }
 }

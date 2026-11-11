@@ -8,9 +8,12 @@
 fn start() {
     this.cpu = [];
     this.alto = false;
+    this.culpado = "";
     this.ultimo_ps = 0;
     this.batida = false;
     this.temp_aviso = false;
+    // altura do quadro do monitor para a largura 1000 (a tela avisa a dela)
+    this.altura = 100.0;
     this.aplica_opcoes();
     this.mostra_recorde();
     this.busca_ip();
@@ -23,8 +26,14 @@ fn tick() {
 
 fn action(name, arg) {
     if name == "ip" {
-        ui("ip", "consultando…");
+        ui("ip", "…");
         this.busca_ip();
+    } else if name == "monitor" {
+        let h = if arg.len() > 0 { parse_float(arg) } else { 0.0 };
+        if h > 1.0 {
+            this.altura = h;
+            this.desenha();
+        }
     }
 }
 
@@ -46,38 +55,46 @@ fn on_event(topic, data) {
     let cpu = data.cpu;
     let temp = data.cpu_temp;
 
-    // gráfico: as últimas 30 leituras
+    // o monitor: as últimas 40 leituras
     this.cpu.push(cpu);
-    if this.cpu.len() > 30 {
+    if this.cpu.len() > 40 {
         this.cpu.remove(0);
     }
     this.batida = !this.batida;
-    ui("historico", this.cpu);
     ui("batida", this.batida);
-    ui("cpu", `${cpu.round().to_int()}%`);
+    ui("cpu", cpu);
+    ui("cpu-texto", `${cpu.round().to_int()}%`);
+    this.desenha();
 
-    let ram = if data.mem_total > 0 { data.mem_used * 100 / data.mem_total } else { 0 };
-    let detalhe = `RAM ${ram}%`;
-    if temp > 0.0 {
-        detalhe += ` · ${temp.round().to_int()} °C`;
-    }
-    ui("detalhe", detalhe);
-    summary(`CPU ${cpu.round().to_int()}% · ${detalhe}`);
+    // RAM
+    let total = data.mem_total.to_float();
+    let usada = data.mem_used.to_float();
+    let ram = if total > 0.0 { usada * 100.0 / total } else { 0.0 };
+    ui("ram", ram);
+    ui("ram-texto", `${ram.round().to_int()}%`);
+    ui("ram-nota", `${gib(usada)} / ${gib(total)} G`);
+
+    // temperatura (0 = sem sensor)
+    ui("temp", temp);
+    ui("temp-texto", if temp > 0.0 { `${temp.round().to_int()} °C` } else { "—" });
+    ui("temp-nota", if temp > 0.0 { "" } else { "sem sensor" });
+
+    // rede
+    ui("rede-baixa", "↓ " + taxa(data.net_rx));
+    ui("rede-sobe", "↑ " + taxa(data.net_tx));
 
     this.guarda_recorde(cpu, temp);
 
     // pico: acha o culpado (no máximo a cada 30 s) e sai do pico só 10 pontos abaixo
     if cpu >= this.limite {
-        if !this.alto {
-            this.alto = true;
-        }
+        this.alto = true;
         if now() - this.ultimo_ps >= 30 {
             this.ultimo_ps = now();
             run_async(["ps", "-eo", "comm,pcpu", "--sort=-pcpu", "--no-headers"], "achou_culpado");
         }
     } else if this.alto && cpu < this.limite - 10.0 {
         this.alto = false;
-        ui("culpado", "");
+        this.culpado = "";
     }
 
     // temperatura crítica: alarme e um aviso só (até esfriar)
@@ -87,25 +104,88 @@ fn on_event(topic, data) {
     }
     this.temp_aviso = quente;
 
+    ui("pico", this.alto || quente);
+    let estado = if quente {
+        "quente demais!"
+    } else if this.alto {
+        if this.culpado != "" { "pico: " + this.culpado } else { "pico de CPU…" }
+    } else if cpu >= 30.0 {
+        "trabalhando"
+    } else {
+        "tudo calmo"
+    };
+    ui("estado", estado);
+    summary(`CPU ${cpu.round().to_int()}% · RAM ${ram.round().to_int()}%`);
     mood(if quente { "alarm" } else if this.alto { "busy" } else if cpu >= 30.0 { "happy" } else { "idle" });
+}
+
+// a linha e a área do monitor, na proporção que a tela avisou
+fn desenha() {
+    let linha = caminho(this.cpu, this.altura);
+    ui("altura", this.altura);
+    ui("linha", linha);
+    // a área desce da ponta direita até a base e volta pela base até o início da linha
+    let n = this.cpu.len();
+    let x0 = if n <= 1 { 0 } else { (1000.0 - (n - 1).to_float() * 1000.0 / 39.0).round().to_int() };
+    let base = this.altura.round().to_int();
+    ui("area", if linha == "" { "" } else { linha + ` L 1000 ${base} L ${x0} ${base} Z` });
+}
+
+// leituras (0 a 100) -> caminho SVG num quadro 1000×h, encostado à direita
+fn caminho(v, h) {
+    let n = v.len();
+    if n == 0 {
+        return "";
+    }
+    let passo = 1000.0 / 39.0;
+    let x0 = 1000.0 - (n - 1).to_float() * passo;
+    let s = "";
+    for i in 0..n {
+        let x = if n == 1 { 0.0 } else { x0 + i.to_float() * passo };
+        let y = h * (0.98 - v[i].max(0.0).min(100.0) * 0.0096);
+        s += if i == 0 { "M " } else { " L " };
+        s += `${x.round().to_int()} ${y.round().to_int()}`;
+    }
+    if n == 1 {
+        s += ` L 1000 ${(h * (0.98 - v[0] * 0.0096)).round().to_int()}`;
+    }
+    s
+}
+
+// bytes -> "4.5" (GiB, uma casa)
+fn gib(b) {
+    let g = (b / 1073741824.0 * 10.0).round() / 10.0;
+    g.to_string()
+}
+
+// bytes/s -> "1.2 MB/s", "30 KB/s"
+fn taxa(b) {
+    if b >= 1000000.0 {
+        `${((b / 100000.0).round() / 10.0).to_string()} MB/s`
+    } else if b >= 1000.0 {
+        `${(b / 1000.0).round().to_int()} KB/s`
+    } else {
+        `${b.round().to_int()} B/s`
+    }
 }
 
 fn achou_culpado(r) {
     if !r.ok {
         return;
     }
-    let linha = r.out.split("\n")[0];
-    let partes = linha.split();
+    let partes = r.out.split("\n")[0].split();
     if partes.len() < 2 {
         return;
     }
     let nome = partes[0];
     let pct = parse_float(partes[partes.len() - 1]);
-    ui("culpado", `${nome} (${pct.round().to_int()}%)`);
-    // a mascote conta à conversa quem foi (o host já conta a mudança de humor)
-    if this.alto {
-        fact("strain", nome, pct);
+    if !this.alto {
+        return;
     }
+    this.culpado = `${nome} (${pct.round().to_int()}%)`;
+    ui("estado", "pico: " + this.culpado);
+    // a mascote conta à conversa quem foi (o host já conta a mudança de humor)
+    fact("strain", nome, pct);
 }
 
 fn guarda_recorde(cpu, temp) {
@@ -136,7 +216,7 @@ fn mostra_recorde() {
         ui("recorde", "—");
         return;
     }
-    let texto = `CPU ${rec.cpu.round().to_int()}% ${quando(rec.cpu_em)}`;
+    let texto = `${rec.cpu.round().to_int()}% ${quando(rec.cpu_em)}`;
     if rec.temp > 0.0 {
         texto += ` · ${rec.temp.round().to_int()} °C ${quando(rec.temp_em)}`;
     }
@@ -162,7 +242,7 @@ fn busca_ip() {
         return;
     }
     if !http_get_async("https://api.ipify.org?format=json", "chegou_ip") {
-        ui("ip", "ocupado, tente de novo");
+        ui("ip", "ocupado");
     }
 }
 

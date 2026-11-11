@@ -1,29 +1,146 @@
-// Gráfico de barras da CPU (0 a 100), da leitura mais antiga à mais nova. Importado pelo
+// Peças da tela do Pulso, no estilo dos Sinais vitais do MiniUtils. Importadas pelo
 // view.slint: a tela de um plugin pode se dividir em arquivos de ui/.
-export component Grafico inherits Rectangle {
-    // leituras em %, até `janela` delas
-    in property <[float]> valores;
-    in property <int> janela: 30;
-    // a partir de quanto a barra fica na cor de alerta
-    in property <float> limite: 85;
+import { Theme } from "../miniutils.slint";
+
+// A cor de cada humor (a mesma regra do hub).
+export global Humor {
+    public pure function cor(t: Theme, mood: string) -> color {
+        if mood == "alarm" { return t.alarm; }
+        if mood == "busy" { return t.warn; }
+        if mood == "happy" { return t.ok; }
+        if mood == "sleep" { return t.sleep; }
+        return t.visor;
+    }
+}
+
+// Barra em segmentos (0 a 100). Acima de `limite`, os segmentos acesos ficam em `alerta`.
+export component Segmentos inherits Rectangle {
+    in property <float> valor;
+    in property <float> limite: 101;
     in property <color> cor;
     in property <color> alerta;
-    in property <color> trilho;
-    property <length> passo: self.width / max(1, janela);
+    in property <color> apagado;
+    in property <int> segmentos: 20;
+    height: 8px;
+    HorizontalLayout {
+        spacing: 2px;
+        for i in segmentos: Rectangle {
+            property <float> meio: (i + 0.5) * 100 / segmentos;
+            background: meio > valor ? apagado : meio >= limite ? alerta : cor;
+            animate background { duration: 300ms; }
+        }
+    }
+}
 
-    background: trilho;
-    // a linha do limite
+// Monitor de batimentos: grade, linha do limite, área preenchida e a linha da CPU, com um
+// ponto pulsando na leitura mais nova. Os caminhos SVG vêm do script num quadro de 1000 de
+// largura por `altura` (o Path mantém a proporção: o quadro tem a do monitor). O monitor
+// avisa a proporção dele por `medida`, e o script redesenha nela.
+export component Monitor inherits Rectangle {
+    in property <string> linha;
+    in property <string> area;
+    // altura do quadro dos caminhos (a largura é 1000)
+    in property <float> altura: 100;
+    callback medida(float /* altura do quadro para a largura 1000 */);
+    property <float> proporcao: self.width > 0 ? 1000 * self.height / self.width : 100;
+    changed proporcao => { root.medida(proporcao); }
+    init => { root.medida(proporcao); }
+    // última leitura (0 a 100), para o ponto
+    in property <float> ultimo;
+    in property <float> limite: 85;
+    in property <bool> batida;
+    in property <color> cor;
+    in property <color> alerta;
+    in property <color> grade;
+    clip: true;
+
+    // grade: 25, 50 e 75%
+    for k in 3: Rectangle {
+        y: parent.height * (k + 1) / 4;
+        height: 1px;
+        background: grade;
+    }
+    // o limite do pico
     Rectangle {
         y: parent.height * (1 - limite / 100);
         height: 1px;
-        background: alerta.with-alpha(0.5);
+        background: alerta.with-alpha(0.55);
     }
-    for v[i] in valores: Rectangle {
-        // encostado à direita: a leitura mais nova fica na ponta
-        x: parent.width - (valores.length - i) * passo;
-        width: max(1px, passo - 1px);
-        height: max(1px, parent.height * clamp(v, 0, 100) / 100);
-        y: parent.height - self.height;
-        background: v >= limite ? alerta : cor;
+    Path {
+        width: 100%;
+        height: 100%;
+        commands: area;
+        viewbox-width: 1000;
+        viewbox-height: altura;
+        fill: cor.with-alpha(0.14);
+        stroke: transparent;
+    }
+    Path {
+        width: 100%;
+        height: 100%;
+        commands: linha;
+        viewbox-width: 1000;
+        viewbox-height: altura;
+        stroke: cor;
+        stroke-width: 2px;
+        fill: transparent;
+    }
+    // o ponto da leitura mais nova
+    Rectangle {
+        property <length> d: batida ? 9px : 6px;
+        width: d;
+        height: d;
+        border-radius: d / 2;
+        x: parent.width - d / 2 - 1px;
+        y: parent.height * (1 - clamp(ultimo, 2, 98) / 100) - d / 2;
+        background: cor;
+        animate width, height { duration: 140ms; easing: ease-out; }
+    }
+}
+
+// Quadro de um número: rótulo, valor e (opcional) barra.
+export component Quadro inherits Rectangle {
+    in property <Theme> theme;
+    in property <string> rotulo;
+    in property <string> valor;
+    in property <string> nota;
+    in property <float> barra: -1;
+    in property <color> cor: theme.visor;
+    background: theme.bg1.with-alpha(0.35);
+    border-width: 1px;
+    border-color: cor.with-alpha(0.25);
+    VerticalLayout {
+        padding: 8px;
+        spacing: 4px;
+        Text {
+            text: rotulo;
+            color: theme.sub;
+            font-family: theme.font-mono;
+            font-size: 10px;
+            letter-spacing: 1.5px;
+        }
+        Text {
+            text: valor;
+            color: cor;
+            font-family: theme.font-mono;
+            font-size: 15px;
+            font-weight: 700;
+            overflow: elide;
+        }
+        if barra >= 0: Segmentos {
+            height: 5px;
+            valor: barra;
+            cor: cor;
+            alerta: cor;
+            apagado: theme.muted.with-alpha(0.3);
+            segmentos: 10;
+        }
+        if nota != "": Text {
+            text: nota;
+            color: theme.sub;
+            font-family: theme.font-mono;
+            font-size: 10px;
+            overflow: elide;
+        }
     }
 }
